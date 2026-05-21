@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+import matplotlib.pyplot as plt
 from scipy import stats
 from statsmodels.stats.multitest import multipletests
 from cleanDatas import CleanDatas
@@ -75,6 +76,22 @@ class PhosphoGroupComparison:
         ]
 
         print(significant.head())
+
+        # Volcano plot: all sites plotted as fold change vs -log10(p-value)
+        # Sites beyond the dashed vertical lines have |log2FC| > 1
+        plt.figure(figsize=(10, 6))
+        plt.scatter(
+            results['FoldChange'],
+            -np.log10(results['PValue']),
+            alpha=0.6
+        )
+        plt.axvline(1,  linestyle='--')  # upper fold change threshold
+        plt.axvline(-1, linestyle='--')  # lower fold change threshold
+        plt.xlabel('Log2 Fold Change')
+        plt.ylabel('-Log10 PValue')
+        plt.title('Volcano Plot of Differential Phosphorylation')
+        plt.tight_layout()
+        plt.show()
 
         return significant
 
