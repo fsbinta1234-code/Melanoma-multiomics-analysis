@@ -1,0 +1,40 @@
+<?xml version='1.0' encoding='utf-8'?>
+<graphml xmlns="http://graphml.graphdrawing.org/xmlns" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://graphml.graphdrawing.org/xmlns http://graphml.graphdrawing.org/xmlns/1.0/graphml.xsd">
+  <key id="d0" for="node" attr.name="pathway" attr.type="string" />
+  <graph edgedefault="directed">
+    <node id="RAS">
+      <data key="d0">MAPK/ERK</data>
+    </node>
+    <node id="BRAF">
+      <data key="d0">MAPK/ERK</data>
+    </node>
+    <node id="MEK">
+      <data key="d0">MAPK/ERK</data>
+    </node>
+    <node id="ERK">
+      <data key="d0">MAPK/ERK</data>
+    </node>
+    <node id="mTOR">
+      <data key="d0">mTOR</data>
+    </node>
+    <node id="AKT">
+      <data key="d0">PI3K-AKT</data>
+    </node>
+    <node id="EMT">
+      <data key="d0">EMT</data>
+    </node>
+    <node id="PI3K">
+      <data key="d0">PI3K-AKT</data>
+    </node>
+    <edge source="RAS" target="BRAF" />
+    <edge source="BRAF" target="MEK" />
+    <edge source="MEK" target="ERK" />
+    <edge source="ERK" target="mTOR" />
+    <edge source="ERK" target="EMT" />
+    <edge source="mTOR" target="EMT" />
+    <edge source="AKT" target="mTOR" />
+    <edge source="AKT" target="ERK" />
+    <edge source="EMT" target="AKT" />
+    <edge source="PI3K" target="AKT" />
+  </graph>
+</graphml>

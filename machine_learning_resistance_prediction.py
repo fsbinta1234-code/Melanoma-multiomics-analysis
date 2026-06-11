@@ -1,118 +1,73 @@
-import pandas as pd
+"""
+Phase 10 — Resistance prediction with Machine Learning.
+
+Trains a Random Forest to classify resistant (ARoe) vs control (LacZ) samples
+from the phosphoproteomic profile and ranks phosphosites by importance
+(biomarker prioritisation). There are 48 samples (24 vs 24).
+"""
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, cross_val_score, StratifiedKFold
 from sklearn.metrics import accuracy_score, classification_report, ConfusionMatrixDisplay
+
+import pipeline_config as cfg
 from cleanDatas import CleanDatas
 
 
 class MachineLearningResistancePrediction:
-    """
-    Predicts BRAFi/MEKi drug resistance using machine learning models trained
-    on phosphoproteomic intensity profiles.
-
-    A Random Forest classifier distinguishes resistant versus sensitive
-    melanoma conditions and ranks phosphosites by feature importance for
-    biomarker prioritisation.
-
-    Expected Output: predictive resistance model, drug-response classifier,
-    and biomarker prioritisation ranking.
-    """
-
-    # 6 binary labels: 3 control (0) followed by 3 resistant (1)
-    SAMPLE_LABELS = [0, 0, 0, 1, 1, 1]
 
     @staticmethod
-    def run_prediction(phospho_log2: pd.DataFrame = None) -> RandomForestClassifier:
-        """
-        Trains and evaluates a Random Forest resistance classifier.
+    def run_prediction() -> RandomForestClassifier:
+        cfg.apply_style()
+        phospho = CleanDatas.clean_phospho_sty_sites()
 
-        The phospho intensity matrix is transposed so that each sample
-        (column) becomes a row and each phosphosite (row) becomes a feature.
-        The classifier is trained on a stratified 70/30 split and evaluated
-        with accuracy and a full classification report.
+        X = phospho.T                     # samples × phosphosites
+        y = np.array(cfg.maxquant_labels(phospho))   # 1=resistant, 0=control
+        print(f"Samples: {X.shape[0]}  |  features: {X.shape[1]}  |  "
+              f"resistant: {int(y.sum())}  control: {int((y == 0).sum())}")
 
-        Parameters
-        ----------
-        phospho_log2 : pd.DataFrame, optional
-            Log2-normalised phospho intensity matrix (sites × samples).
-            When None, CleanDatas.clean_phospho_sty_sites() is called.
+        model = RandomForestClassifier(n_estimators=300, random_state=42, n_jobs=-1)
 
-        Returns
-        -------
-        RandomForestClassifier
-            The fitted classifier.
-        """
-        if phospho_log2 is None:
-            phospho_log2 = CleanDatas.clean_phospho_sty_sites()
+        # Stratified 5-fold cross-validation (more robust estimate)
+        cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+        cv_scores = cross_val_score(model, X, y, cv=cv, scoring="accuracy")
+        print(f"Accuracy (5-fold CV) : {cv_scores.mean():.3f} ± {cv_scores.std():.3f}")
 
-        # Transpose: rows = samples, columns = phosphosite features
-        X = phospho_log2.T
-        y = MachineLearningResistancePrediction.SAMPLE_LABELS
-
+        # Final model evaluated on a held-out test set
         X_train, X_test, y_train, y_test = train_test_split(
-            X,
-            y,
-            test_size=0.3,
-            random_state=42,
-        )
-
-        model = RandomForestClassifier(
-            n_estimators=100,
-            random_state=42,
-        )
+            X, y, test_size=0.3, random_state=42, stratify=y)
         model.fit(X_train, y_train)
+        pred = model.predict(X_test)
+        print(f"Accuracy (held-out test) : {accuracy_score(y_test, pred):.3f}")
+        print(classification_report(y_test, pred, target_names=["LacZ", "ARoe"], zero_division=0))
 
-        predictions = model.predict(X_test)
-        accuracy    = accuracy_score(y_test, predictions)
-
-        print(f"Accuracy : {accuracy:.4f}")
-        print(classification_report(y_test, predictions, zero_division=0))
-
-        MachineLearningResistancePrediction._plot_feature_importance(
-            model, phospho_log2.index
-        )
-
+        MachineLearningResistancePrediction._plot_confusion(model, X_test, y_test)
+        MachineLearningResistancePrediction._plot_importance(model, phospho.index)
         return model
 
     @staticmethod
-    def _plot_feature_importance(
-        model: RandomForestClassifier,
-        feature_names: pd.Index,
-        top_n: int = 20,
-    ) -> None:
-        """
-        Plots the top-N most important phosphosite features.
+    def _plot_confusion(model, X_test, y_test) -> None:
+        fig, ax = plt.subplots(figsize=(5.5, 5))
+        ConfusionMatrixDisplay.from_estimator(
+            model, X_test, y_test, display_labels=["LacZ", "ARoe"],
+            cmap="Blues", colorbar=False, ax=ax)
+        ax.set_title("Confusion Matrix (test set)")
+        cfg.save_figure(fig, "10_ml_confusion_matrix")
 
-        Parameters
-        ----------
-        model : RandomForestClassifier
-            Fitted Random Forest model.
-        feature_names : pd.Index
-            Names of all phosphosite features (rows of the original matrix).
-        top_n : int
-            Number of top features to display.
-        """
-        importances = pd.Series(
-            model.feature_importances_,
-            index=feature_names,
-        ).nlargest(top_n)
-
-        fig, ax = plt.subplots(figsize=(9, 6))
-        importances[::-1].plot(kind='barh', color='steelblue', ax=ax)
-
-        ax.set_xlabel('Feature Importance (Gini)', fontsize=12)
-        ax.set_title(f'Top {top_n} Phosphosite Predictors of Resistance', fontsize=13)
-        ax.tick_params(axis='y', labelsize=8)
-
-        plt.tight_layout()
-        plt.show()
+    @staticmethod
+    def _plot_importance(model, feature_names, top_n: int = 20) -> None:
+        importances = pd.Series(model.feature_importances_, index=feature_names).nlargest(top_n)
+        fig, ax = plt.subplots(figsize=(9, 7))
+        ax.barh(importances.index[::-1], importances.values[::-1],
+                color=cfg.COLOR_CONTROL, edgecolor="#333333", alpha=0.9)
+        ax.set_xlabel("Importance (Gini)")
+        ax.set_title(f"Top {top_n} phosphosite predictors of resistance")
+        ax.tick_params(axis="y", labelsize=8)
+        cfg.save_figure(fig, "10_ml_feature_importance")
 
 
-# ----------------------------------------------------------------------
-# Entry point
-# ----------------------------------------------------------------------
 def main():
     MachineLearningResistancePrediction.run_prediction()
 

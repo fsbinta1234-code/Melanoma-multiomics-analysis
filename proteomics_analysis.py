@@ -1,109 +1,95 @@
-import pandas as pd
+"""
+Phase 7 — Differential proteomics analysis (ARoe/resistant vs LacZ/control).
+
+Computes log2FC and a t-test per protein (LFQ) and identifies candidate adaptive
+regulators. Produces a volcano plot and the fold-change distribution.
+"""
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
-import seaborn as sns
+from scipy import stats
+from statsmodels.stats.multitest import multipletests
+
+import pipeline_config as cfg
 from cleanDatas import CleanDatas
 
 
 class ProteomicsAnalysis:
-    """
-    Analyzes protein abundance profiles to identify adaptive resistance
-    regulators and differentially expressed proteins between control and
-    resistant melanoma conditions.
-
-    Expected Output: differential protein abundance, adaptive signaling
-    proteins, and therapeutic target candidates.
-    """
+    FC_THRESHOLD = 1.0
+    ADJ_P_CUTOFF = 0.05
 
     @staticmethod
     def run_analysis() -> pd.DataFrame:
-        """
-        Cleans proteinGroups data and computes per-protein log2 fold change.
-
-        The cleaned protein groups table is filtered to remove contaminants
-        and reverse-database hits.  LFQ intensity columns are extracted,
-        log2-normalised, and split into control (columns 0–2) and resistant
-        (columns 3–5) groups for fold-change calculation.
-
-        Returns
-        -------
-        pd.DataFrame
-            One row per protein group with column ProteinFoldChange.
-        """
+        cfg.apply_style()
         protein = CleanDatas.clean_protein_groups()
+        ctrl_cols, res_cols = cfg.maxquant_groups(protein)
 
-        # Remove contaminants and reverse hits
-        protein_clean = protein[
-            (protein['Reverse'] != '+') &
-            (protein['Potential contaminant'] != '+')
-        ]
+        ctrl = protein[ctrl_cols].to_numpy()
+        res = protein[res_cols].to_numpy()
+        fc = res.mean(axis=1) - ctrl.mean(axis=1)
+        _, p = stats.ttest_ind(res, ctrl, axis=1)
+        p = np.nan_to_num(p, nan=1.0)
+        adj = multipletests(p, method="fdr_bh")[1]
 
-        # Extract LFQ intensity columns
-        lfq_cols = [
-            col for col in protein_clean.columns
-            if 'LFQ intensity' in col
-        ]
-
-        protein_lfq  = protein_clean[lfq_cols]
-        protein_log2 = np.log2(protein_lfq + 1)
-
-        # Impute missing values with column median
-        protein_log2 = protein_log2.fillna(protein_log2.median())
-
-        # Log2 fold change: resistant (cols 3–5) minus control (cols 0–2)
-        protein_fc = (
-            protein_log2.iloc[:, 3:6].mean(axis=1) -
-            protein_log2.iloc[:, 0:3].mean(axis=1)
+        results = pd.DataFrame(
+            {"ProteinFoldChange": fc, "PValue": p, "AdjPValue": adj},
+            index=protein.index,
         )
+        results["Significant"] = (results["AdjPValue"] < ProteomicsAnalysis.ADJ_P_CUTOFF) & (
+            results["ProteinFoldChange"].abs() > ProteomicsAnalysis.FC_THRESHOLD)
 
-        protein_results = pd.DataFrame(
-            {'ProteinFoldChange': protein_fc},
-            index=protein_log2.index,
-        )
+        n_sig = int(results["Significant"].sum())
+        print(f"Proteins analysed : {len(results)}  |  significant : {n_sig}")
+        if n_sig:
+            top = results[results["Significant"]].reindex(
+                results["ProteinFoldChange"].abs().sort_values(ascending=False).index).head(10)
+            print("Top 10 by |log2FC|:")
+            print(top[["ProteinFoldChange", "AdjPValue"]].to_string())
 
-        print(f"Proteins analysed : {len(protein_results)}")
-        print(protein_results.head(10))
-
-        ProteomicsAnalysis._plot_fold_change_distribution(protein_results)
-
-        return protein_results
+        ProteomicsAnalysis._plot_volcano(results)
+        ProteomicsAnalysis._plot_distribution(results)
+        return results
 
     @staticmethod
-    def _plot_fold_change_distribution(protein_results: pd.DataFrame) -> None:
-        """
-        Plots the distribution of protein-level log2 fold changes.
+    def _plot_volcano(results: pd.DataFrame) -> None:
+        fig, ax = plt.subplots(figsize=(10, 7))
+        neglogp = -np.log10(results["PValue"].clip(lower=1e-300))
+        sig = results["Significant"]
+        ax.scatter(results.loc[~sig, "ProteinFoldChange"], neglogp[~sig],
+                   c=cfg.COLOR_NS, s=16, alpha=0.5, edgecolors="none",
+                   label=f"Not significant ({int((~sig).sum())})")
+        up = sig & (results["ProteinFoldChange"] > 0)
+        dn = sig & (results["ProteinFoldChange"] < 0)
+        ax.scatter(results.loc[up, "ProteinFoldChange"], neglogp[up], c=cfg.COLOR_UP,
+                   s=22, alpha=0.85, edgecolors="none", label=f"Up resistant ({int(up.sum())})")
+        ax.scatter(results.loc[dn, "ProteinFoldChange"], neglogp[dn], c=cfg.COLOR_DOWN,
+                   s=22, alpha=0.85, edgecolors="none", label=f"Down resistant ({int(dn.sum())})")
+        for prot, row in results[sig].reindex(neglogp[sig].sort_values(ascending=False).index).head(10).iterrows():
+            ax.annotate(prot, (row["ProteinFoldChange"], -np.log10(max(row["PValue"], 1e-300))),
+                        fontsize=7.5, xytext=(4, 3), textcoords="offset points")
+        ax.axvline(ProteomicsAnalysis.FC_THRESHOLD, ls="--", color="dimgrey", lw=0.8)
+        ax.axvline(-ProteomicsAnalysis.FC_THRESHOLD, ls="--", color="dimgrey", lw=0.8)
+        ax.axhline(-np.log10(ProteomicsAnalysis.ADJ_P_CUTOFF), ls=":", color="steelblue", lw=0.9)
+        ax.set_xlabel("Log2 Fold Change (ARoe resistant / LacZ control)")
+        ax.set_ylabel("-Log10 (p-value)")
+        ax.set_title("Volcano Plot — Differential Protein Abundance")
+        ax.legend(loc="upper left", fontsize=9)
+        cfg.save_figure(fig, "07_proteomics_volcano")
 
-        Parameters
-        ----------
-        protein_results : pd.DataFrame
-            DataFrame with column ProteinFoldChange.
-        """
-        fig, ax = plt.subplots(figsize=(8, 5))
-
-        sns.histplot(
-            protein_results['ProteinFoldChange'].dropna(),
-            bins=60,
-            kde=True,
-            color='steelblue',
-            ax=ax,
-        )
-
-        ax.axvline( 1, linestyle='--', color='crimson',  linewidth=0.9, label='|FC| = 1')
-        ax.axvline(-1, linestyle='--', color='crimson',  linewidth=0.9)
-        ax.axvline( 0, linestyle='-',  color='dimgrey', linewidth=0.6)
-
-        ax.set_xlabel('Log2 Fold Change (Resistant / Control)', fontsize=12)
-        ax.set_ylabel('Count', fontsize=12)
-        ax.set_title('Protein Abundance Fold Change Distribution', fontsize=13)
-        ax.legend(frameon=False)
-
-        plt.tight_layout()
-        plt.show()
+    @staticmethod
+    def _plot_distribution(results: pd.DataFrame) -> None:
+        import seaborn as sns
+        fig, ax = plt.subplots(figsize=(9, 5.5))
+        sns.histplot(results["ProteinFoldChange"].dropna(), bins=70, kde=True,
+                     color=cfg.COLOR_CONTROL, ax=ax)
+        for x in (-1, 1):
+            ax.axvline(x, ls="--", color="crimson", lw=0.9)
+        ax.axvline(0, ls="-", color="dimgrey", lw=0.6)
+        ax.set_xlabel("Log2 Fold Change (ARoe resistant / LacZ control)")
+        ax.set_title("Distribution of Protein Abundance Fold Changes")
+        cfg.save_figure(fig, "07_proteomics_fc_distribution")
 
 
-# ----------------------------------------------------------------------
-# Entry point
-# ----------------------------------------------------------------------
 def main():
     ProteomicsAnalysis.run_analysis()
 

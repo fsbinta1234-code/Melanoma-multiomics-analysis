@@ -1,134 +1,148 @@
-import pandas as pd
+"""
+Phase 2 — Cleaning and quality control of the three omics datasets.
+
+Each method loads the raw data via ReadData, removes contaminants/reverse hits,
+selects only the real sample columns (1A..12D in MaxQuant), applies log2
+normalisation and missing-value imputation, returning a sample-per-column matrix
+ready for analysis.
+"""
 import numpy as np
+import pandas as pd
+
+import pipeline_config as cfg
 from readDataset import ReadData
 
 
 class CleanDatas:
-    """
-    Central class responsible for cleaning and preprocessing the three omics
-    datasets used in the melanoma multi-omics analysis project.  Each static
-    method loads its own raw data internally and returns a cleaned DataFrame
-    ready for downstream analysis.
-    """
+    """Cleaning and pre-processing of the phospho, protein and transcript matrices."""
+
+    LOCALIZATION_CUTOFF = 0.75  # minimum phosphosite localisation confidence
 
     # ------------------------------------------------------------------
-    # Cleaning 1 – GEO microarray expression matrix (GSE199405)
+    # GEO microarray (GSE199405) — transcriptomics
     # ------------------------------------------------------------------
     @staticmethod
     def clean_geo_series_matrix() -> pd.DataFrame:
-        """
-        Loads and cleans the GEO Series Matrix expression data (GSE199405).
+        """GEO expression matrix (already log2-normalised by RMA).
 
-        The raw file contains 135 750 Affymetrix Clariom D probe-set rows and
-        12 sample columns (3 melanoma cell lines x 2 vectors x 2 treatments).
-        Expression values are RMA-normalised log2 intensities.
-
-        Returns
-        -------
-        pd.DataFrame
-            Cleaned expression DataFrame.
+        Only coerces to numeric and drops fully-empty probes. Does NOT re-apply
+        log2 (the values are already on a log2 scale).
         """
-        # Load the raw expression matrix using the dedicated reader
         df = ReadData.read_geo_series_matrix()
+        df = df.apply(pd.to_numeric, errors="coerce")
+        df = df.dropna(how="all")
         return df
+
     # ------------------------------------------------------------------
-    # Cleaning 2 – MaxQuant protein groups (label-free proteomics)
+    # MaxQuant proteinGroups — proteomics (LFQ)
     # ------------------------------------------------------------------
     @staticmethod
     def clean_protein_groups() -> pd.DataFrame:
-        """
-        Loads and cleans the MaxQuant proteinGroups dataset.
+        """Protein matrix: imputed log2(LFQ), columns = tokens 1A..12D.
 
-        The raw file contains ~6 587 protein groups across all melanoma samples
-        with 418 columns covering peptide counts, LFQ intensities, iBAQ values,
-        and quality-control flags produced by MaxQuant.
-
-        Returns
-        -------
-        pd.DataFrame
-            Cleaned protein groups DataFrame.
+        Index = gene symbol (or 'Majority protein IDs' as a fallback).
         """
-        # Load the raw protein groups table using the dedicated reader
         df = ReadData.read_protein_groups()
 
-        # --- cleaning steps go here ---
+        # Remove contaminants and reverse-database hits
+        for flag in ("Reverse", "Potential contaminant"):
+            if flag in df.columns:
+                df = df[df[flag] != "+"]
 
-        return df
+        # Keep only real LFQ sample columns (1A..12D)
+        col_map = cfg.maxquant_clean_column_map(df.columns, "LFQ intensity ")
+        lfq = df[list(col_map)].rename(columns=col_map)
+        lfq = lfq[sorted(lfq.columns, key=lambda t: (cfg._token_number(t), t[-1]))]
+
+        # Readable index: gene (1st symbol) or protein ID
+        gene = df.get("Gene names", pd.Series(index=df.index, dtype="object"))
+        majority = df.get("Majority protein IDs", pd.Series(index=df.index, dtype="object"))
+        ids = gene.fillna("").astype(str).str.split(";").str[0]
+        ids = ids.where(ids != "", majority.fillna("PG").astype(str).str.split(";").str[0])
+        lfq.index = CleanDatas._make_unique(ids.values)
+
+        # log2 + min-value imputation
+        log2 = np.log2(lfq + 1)
+        log2 = cfg.min_value_impute(log2)
+        return log2
 
     # ------------------------------------------------------------------
-    # Cleaning 3 – MaxQuant phosphorylation sites (Phospho STY Sites)
+    # MaxQuant Phospho (STY) Sites — phosphoproteomics
     # ------------------------------------------------------------------
     @staticmethod
-    def clean_phospho_sty_sites() -> pd.DataFrame:
-        """
-        Loads and cleans the MaxQuant Phospho (STY) Sites dataset.
+    def clean_phospho_sty_sites(return_meta: bool = False):
+        """Phosphosite matrix: imputed log2(Intensity), columns 1A..12D.
 
-        The raw file contains ~22 369 phosphorylation events on serine (S),
-        threonine (T), and tyrosine (Y) residues across all samples, with 651
-        columns covering localisation probabilities, intensities, and scores.
-
-        Returns
-        -------
-        pd.DataFrame
-            Cleaned phospho sites DataFrame.
+        Filters contaminants/reverse hits and requires Localization prob ≥ 0.75.
+        Index = '<GENE>_<AA><pos>' (unique). With return_meta=True, also returns
+        a Series with the full gene name(s) per site.
         """
-        # Load the raw phospho sites table using the dedicated reader
         df = ReadData.read_phospho_sty_sites()
 
-        # --- cleaning steps go here ---
-        print(df.columns)
-    
-        # --- cleaning steps go here ---
-        # REMOVE CONTAMINANTS
-        phospho_clean = df[
-        (df['Reverse'] != '+') &
-        (df['Potential contaminant'] != '+')
-        ]
-        # FILTER PHOSPHOSITES
-        phospho_clean = phospho_clean[
-        phospho_clean['Localization prob'] >= 0.75
-        ]
-        # SELECT INTENSITY COLUMNS
-        intensity_cols = [
-        col for col in phospho_clean.columns
-        if 'Intensity' in col
-        ]
-        phospho_intensity = phospho_clean[intensity_cols]
-        # LOG2 NORMALIZATION
-        phospho_log2 = np.log2(
-        phospho_intensity + 1
-        )
-        # HANDLE MISSING VALUES
-        phospho_log2 = phospho_log2.fillna(
-        phospho_log2.median()
-        )
-        '''
-        # QUALITY CONTROL VISUALIZATION
-        plt.figure(figsize=(10,6))
-        sns.boxplot(data=phospho_log2)
-        plt.xticks(rotation=90)
-        plt.title("Normalized Phosphoproteomics Intensities")
-        plt.show()
-        '''
-        return phospho_log2
+        for flag in ("Reverse", "Potential contaminant"):
+            if flag in df.columns:
+                df = df[df[flag] != "+"]
+        if "Localization prob" in df.columns:
+            df = df[df["Localization prob"] >= CleanDatas.LOCALIZATION_CUTOFF]
+        df = df.reset_index(drop=True)
 
-        return df
+        # Keep only real sample intensity columns (1A..12D)
+        col_map = cfg.maxquant_clean_column_map(df.columns, "Intensity ")
+        intensity = df[list(col_map)].rename(columns=col_map)
+        intensity = intensity[
+            sorted(intensity.columns, key=lambda t: (cfg._token_number(t), t[-1]))
+        ]
+
+        # Readable site identifier: GENE_AApos
+        gene_full = df.get("Gene names", pd.Series(index=df.index, dtype="object")).fillna("NA").astype(str)
+        gene1 = gene_full.str.split(";").str[0].replace("", "NA")
+        aa = df.get("Amino acid", pd.Series(index=df.index, dtype="object")).fillna("?").astype(str)
+        pos = pd.to_numeric(df.get("Position", pd.Series(index=df.index)), errors="coerce").fillna(0).astype(int)
+        site_ids = CleanDatas._make_unique((gene1 + "_" + aa + pos.astype(str)).values)
+        intensity.index = site_ids
+
+        # log2 + min-value imputation
+        log2 = np.log2(intensity + 1)
+        log2 = cfg.min_value_impute(log2)
+
+        if return_meta:
+            meta = pd.DataFrame({"Gene": gene_full.values}, index=site_ids)
+            return log2, meta
+        return log2
+
+    # ------------------------------------------------------------------
+    # helper: make labels unique (suffix .1, .2, ... for duplicates)
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _make_unique(labels) -> pd.Index:
+        seen = {}
+        out = []
+        for lab in labels:
+            if lab in seen:
+                seen[lab] += 1
+                out.append(f"{lab}.{seen[lab]}")
+            else:
+                seen[lab] = 0
+                out.append(lab)
+        return pd.Index(out)
 
 
 # ----------------------------------------------------------------------
-# Quick smoke-test: run each cleaner and print a brief summary
-# ----------------------------------------------------------------------
+def main():
+    print("=== Dataset cleaning ===")
+    geo = CleanDatas.clean_geo_series_matrix()
+    print(f"GEO transcriptomics : {geo.shape[0]} probes × {geo.shape[1]} samples")
+
+    prot = CleanDatas.clean_protein_groups()
+    ctrl, res = cfg.maxquant_groups(prot)
+    print(f"Proteins            : {prot.shape[0]} × {prot.shape[1]}  "
+          f"(control={len(ctrl)}, resistant={len(res)})")
+
+    phos = CleanDatas.clean_phospho_sty_sites()
+    ctrl, res = cfg.maxquant_groups(phos)
+    print(f"Phosphosites        : {phos.shape[0]} × {phos.shape[1]}  "
+          f"(control={len(ctrl)}, resistant={len(res)})")
+
+
 if __name__ == "__main__":
-
-    cleaners = {
-        "GEO Expression Matrix": CleanDatas.clean_geo_series_matrix,
-        "Protein Groups":        CleanDatas.clean_protein_groups,
-        "Phospho (STY) Sites":   CleanDatas.clean_phospho_sty_sites,
-    }
-
-    for name, cleaner in cleaners.items():
-        print(f"\n{'='*60}")
-        print(f"  {name}")
-        print(f"{'='*60}")
-        cleaned = cleaner()
-        print(f"  Shape   : {cleaned.shape if cleaned is not None else 'not implemented yet'}")
+    main()

@@ -1,109 +1,85 @@
-import pandas as pd
+"""
+Phase 8 — Transcriptomics validation (GEO GSE199405).
+
+Uses the REAL metadata mapping (ARoe = resistant, LacZ = control) to compute
+log2FC and a t-test per probe, providing orthogonal evidence of the resistance
+signatures. Expression values are already on a log2 (RMA) scale.
+"""
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
+from scipy import stats
+from statsmodels.stats.multitest import multipletests
+
+import pipeline_config as cfg
 from cleanDatas import CleanDatas
 
 
 class TranscriptomicsValidation:
-    """
-    Validates phosphoproteomic signaling findings using transcriptomics data
-    from the GEO dataset GSE199405.
-
-    Differentially expressed genes are identified by computing log2 fold
-    change between resistant and control conditions, providing orthogonal
-    evidence for resistance-associated transcriptomic signatures.
-
-    Expected Output: differentially expressed genes and resistance-associated
-    transcriptomic signatures.
-    """
+    FC_THRESHOLD = 1.0
+    ADJ_P_CUTOFF = 0.05
 
     @staticmethod
     def run_analysis() -> pd.DataFrame:
-        """
-        Loads the GEO expression matrix and computes per-probe fold change.
+        cfg.apply_style()
+        expr = CleanDatas.clean_geo_series_matrix()
+        ctrl_cols, res_cols = cfg.geo_groups(expr)
+        print(f"GEO groups — control (LacZ): {len(ctrl_cols)} | resistant (ARoe): {len(res_cols)}")
 
-        The expression matrix (RMA-normalised log2 intensities) is split into
-        control (columns 0–2) and resistant (columns 3–5) groups.  A per-probe
-        log2 fold change is computed as mean(resistant) - mean(control) and the
-        results are returned for downstream multi-omics integration.
+        ctrl = expr[ctrl_cols].to_numpy()
+        res = expr[res_cols].to_numpy()
+        fc = res.mean(axis=1) - ctrl.mean(axis=1)          # already log2
+        _, p = stats.ttest_ind(res, ctrl, axis=1)
+        p = np.nan_to_num(p, nan=1.0)
+        adj = multipletests(p, method="fdr_bh")[1]
 
-        Returns
-        -------
-        pd.DataFrame
-            One row per probe set with column GeneFoldChange.
-        """
-        transcript = CleanDatas.clean_geo_series_matrix()
+        results = pd.DataFrame(
+            {"GeneFoldChange": fc, "PValue": p, "AdjPValue": adj}, index=expr.index)
+        results["Significant"] = (results["AdjPValue"] < TranscriptomicsValidation.ADJ_P_CUTOFF) & (
+            results["GeneFoldChange"].abs() > TranscriptomicsValidation.FC_THRESHOLD)
 
-        # Expression values are already RMA log2-normalised; select samples
-        expression = transcript.iloc[:, 0:]
+        print(f"Probes analysed : {len(results)}  |  significant : {int(results['Significant'].sum())}")
 
-        # Coerce to numeric to handle any string artefacts from the GEO file
-        expression = expression.apply(pd.to_numeric, errors='coerce')
-
-        # Log2-normalise (expression values are already log2, but re-apply
-        # to any non-normalised columns loaded as raw counts)
-        expression_log2 = np.log2(expression + 1)
-
-        # Impute missing values with row median
-        expression_log2 = expression_log2.apply(
-            lambda row: row.fillna(row.median()), axis=1
-        )
-
-        # Log2 fold change: resistant (cols 3–5) minus control (cols 0–2)
-        transcript_fc = (
-            expression_log2.iloc[:, 3:6].mean(axis=1) -
-            expression_log2.iloc[:, 0:3].mean(axis=1)
-        )
-
-        transcript_results = pd.DataFrame(
-            {'GeneFoldChange': transcript_fc},
-            index=expression_log2.index,
-        )
-
-        print(f"Probe sets analysed : {len(transcript_results)}")
-        print(transcript_results.head(10))
-
-        TranscriptomicsValidation._plot_fold_change_distribution(transcript_results)
-
-        return transcript_results
+        TranscriptomicsValidation._plot_volcano(results)
+        TranscriptomicsValidation._plot_distribution(results)
+        return results
 
     @staticmethod
-    def _plot_fold_change_distribution(transcript_results: pd.DataFrame) -> None:
-        """
-        Plots the distribution of gene-level log2 fold changes.
+    def _plot_volcano(results: pd.DataFrame) -> None:
+        fig, ax = plt.subplots(figsize=(10, 7))
+        neglogp = -np.log10(results["PValue"].clip(lower=1e-300))
+        sig = results["Significant"]
+        ax.scatter(results.loc[~sig, "GeneFoldChange"], neglogp[~sig], c=cfg.COLOR_NS,
+                   s=10, alpha=0.4, edgecolors="none", label=f"Not significant ({int((~sig).sum())})")
+        up = sig & (results["GeneFoldChange"] > 0)
+        dn = sig & (results["GeneFoldChange"] < 0)
+        ax.scatter(results.loc[up, "GeneFoldChange"], neglogp[up], c=cfg.COLOR_UP,
+                   s=16, alpha=0.8, edgecolors="none", label=f"Up resistant ({int(up.sum())})")
+        ax.scatter(results.loc[dn, "GeneFoldChange"], neglogp[dn], c=cfg.COLOR_DOWN,
+                   s=16, alpha=0.8, edgecolors="none", label=f"Down resistant ({int(dn.sum())})")
+        ax.axvline(1, ls="--", color="dimgrey", lw=0.8)
+        ax.axvline(-1, ls="--", color="dimgrey", lw=0.8)
+        ax.axhline(-np.log10(TranscriptomicsValidation.ADJ_P_CUTOFF), ls=":", color="steelblue", lw=0.9)
+        ax.set_xlabel("Log2 Fold Change (ARoe resistant / LacZ control)")
+        ax.set_ylabel("-Log10 (p-value)")
+        ax.set_title("Volcano Plot — Differential Gene Expression (GSE199405)")
+        ax.legend(loc="upper left", fontsize=9)
+        cfg.save_figure(fig, "08_transcriptomics_volcano")
 
-        Parameters
-        ----------
-        transcript_results : pd.DataFrame
-            DataFrame with column GeneFoldChange.
-        """
-        fig, ax = plt.subplots(figsize=(8, 5))
-
-        sns.histplot(
-            transcript_results['GeneFoldChange'].dropna(),
-            bins=80,
-            kde=True,
-            color='mediumseagreen',
-            ax=ax,
-        )
-
-        ax.axvline( 1, linestyle='--', color='crimson', linewidth=0.9, label='|FC| = 1')
-        ax.axvline(-1, linestyle='--', color='crimson', linewidth=0.9)
-        ax.axvline( 0, linestyle='-',  color='dimgrey', linewidth=0.6)
-
-        ax.set_xlabel('Log2 Fold Change (Resistant / Control)', fontsize=12)
-        ax.set_ylabel('Count', fontsize=12)
-        ax.set_title('Transcriptomic Gene Expression Fold Change Distribution', fontsize=13)
-        ax.legend(frameon=False)
-
-        plt.tight_layout()
-        plt.show()
+    @staticmethod
+    def _plot_distribution(results: pd.DataFrame) -> None:
+        fig, ax = plt.subplots(figsize=(9, 5.5))
+        sns.histplot(results["GeneFoldChange"].dropna(), bins=90, kde=True,
+                     color=cfg.COLOR_ACCENT, ax=ax)
+        for x in (-1, 1):
+            ax.axvline(x, ls="--", color="crimson", lw=0.9)
+        ax.axvline(0, ls="-", color="dimgrey", lw=0.6)
+        ax.set_xlabel("Log2 Fold Change (ARoe resistant / LacZ control)")
+        ax.set_title("Distribution of Gene Expression Fold Changes")
+        cfg.save_figure(fig, "08_transcriptomics_fc_distribution")
 
 
-# ----------------------------------------------------------------------
-# Entry point
-# ----------------------------------------------------------------------
 def main():
     TranscriptomicsValidation.run_analysis()
 

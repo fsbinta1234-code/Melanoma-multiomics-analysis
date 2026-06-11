@@ -1,4 +1,10 @@
-import pandas as pd
+"""
+Phase 14 — Final result export.
+
+Runs the differential analyses and saves every table to results/outputs/,
+reusing already-computed results to avoid recomputation.
+"""
+import pipeline_config as cfg
 from differential_phosphorylation_analysis import DifferentialPhosphorylationAnalysis
 from proteomics_analysis import ProteomicsAnalysis
 from transcriptomics_validation import TranscriptomicsValidation
@@ -6,78 +12,34 @@ from multi_omics_integration import MultiOmicsIntegration
 
 
 class FinalResultExport:
-    """
-    Exports all computational outputs for downstream biological interpretation
-    and publication-quality analysis.
-
-    Each omics layer is saved as a separate CSV file and an integrated
-    multi-omics summary is produced.  All files are written to the working
-    directory and are ready for further processing in R, Excel, or Cytoscape.
-
-    Expected Output: final phosphoproteomics results, final proteomics
-    results, final transcriptomics results, and final integrated systems
-    biology outputs.
-    """
-
-    PHOSPHO_FILE     = 'Differential_Phosphorylation.csv'
-    PROTEOMICS_FILE  = 'Proteomics_Results.csv'
-    TRANSCRIPT_FILE  = 'Transcriptomics_Results.csv'
-    MULTIOMICS_FILE  = 'Integrated_Multiomics.csv'
 
     @staticmethod
-    def export(
-        significant:        pd.DataFrame = None,
-        protein_results:    pd.DataFrame = None,
-        transcript_results: pd.DataFrame = None,
-        multiomics:         pd.DataFrame = None,
-    ) -> None:
-        """
-        Saves all omics results to CSV files.
+    def export() -> None:
+        cfg.apply_style()
 
-        Any omics layer that is not provided is computed by calling its
-        upstream analysis module.  The multi-omics integration step is also
-        run if not provided, producing the unified Integrated_Multiomics.csv.
+        phospho_results = DifferentialPhosphorylationAnalysis.compute_results()
+        protein_results = ProteomicsAnalysis.run_analysis()
+        transcript_results = TranscriptomicsValidation.run_analysis()
+        integrated = MultiOmicsIntegration.integrate(
+            phospho_results, protein_results, transcript_results)
 
-        Parameters
-        ----------
-        significant : pd.DataFrame, optional
-            Significant phosphosites from Phase 4.
-        protein_results : pd.DataFrame, optional
-            Protein fold-change table from Phase 7.
-        transcript_results : pd.DataFrame, optional
-            Transcript fold-change table from Phase 8.
-        multiomics : pd.DataFrame, optional
-            Integrated multi-omics table from Phase 9.
-        """
-        if significant is None:
-            significant = DifferentialPhosphorylationAnalysis.run_analysis()
+        significant = phospho_results[phospho_results["Significant"]]
 
-        if protein_results is None:
-            protein_results = ProteomicsAnalysis.run_analysis()
+        # Save FULL tables (with the Significant column for filtering), plus a
+        # file containing only the significant phosphosites.
+        cfg.save_table(phospho_results, "Differential_Phosphorylation_all.csv")
+        cfg.save_table(significant, "Differential_Phosphorylation_significant.csv")
+        cfg.save_table(protein_results, "Proteomics_Results.csv")
+        cfg.save_table(transcript_results, "Transcriptomics_Results.csv")
+        cfg.save_table(integrated, "Integrated_Multiomics.csv", index=False)
 
-        if transcript_results is None:
-            transcript_results = TranscriptomicsValidation.run_analysis()
-
-        if multiomics is None:
-            multiomics = MultiOmicsIntegration.integrate(
-                significant, protein_results, transcript_results
-            )
-
-        significant.to_csv(FinalResultExport.PHOSPHO_FILE,    index=False)
-        protein_results.to_csv(FinalResultExport.PROTEOMICS_FILE, index=False)
-        transcript_results.to_csv(FinalResultExport.TRANSCRIPT_FILE, index=False)
-        multiomics.to_csv(FinalResultExport.MULTIOMICS_FILE,  index=False)
-
-        print('Complete melanoma systems biology analysis finished.')
-        print(f"  {FinalResultExport.PHOSPHO_FILE}")
-        print(f"  {FinalResultExport.PROTEOMICS_FILE}")
-        print(f"  {FinalResultExport.TRANSCRIPT_FILE}")
-        print(f"  {FinalResultExport.MULTIOMICS_FILE}")
+        print("\nMelanoma systems-biology analysis complete.")
+        print(f"  Significant phosphosites : {len(significant)}")
+        print(f"  Significant proteins     : {int(protein_results['Significant'].sum())}")
+        print(f"  Significant probes       : {int(transcript_results['Significant'].sum())}")
+        print(f"  Integrated genes         : {len(integrated)}")
 
 
-# ----------------------------------------------------------------------
-# Entry point
-# ----------------------------------------------------------------------
 def main():
     FinalResultExport.export()
 

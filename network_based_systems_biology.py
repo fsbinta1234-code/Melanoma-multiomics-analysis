@@ -1,95 +1,70 @@
+"""
+Phase 12 — Network-based systems biology.
+
+Reconstructs the BRAFi/MEKi resistance signalling network (MAPK/ERK, PI3K-AKT,
+mTOR, EMT) as a directed graph, with nodes coloured by pathway and sized by
+centrality.
+"""
 import matplotlib.pyplot as plt
+from matplotlib.patches import Patch
 import networkx as nx
+
+import pipeline_config as cfg
 
 
 class NetworkBasedSystemsBiology:
-    """
-    Reconstructs protein-protein interaction networks and kinase-substrate
-    signaling systems for BRAFi/MEKi resistance in melanoma using
-    graph-based systems biology approaches.
 
-    Known pathway edges are encoded from the MAPK/ERK, PI3K-AKT, mTOR,
-    and EMT resistance signaling literature.
-
-    Expected Output: resistance signaling networks, kinase-substrate
-    interaction maps, and systems biology communication networks.
-    """
-
-    # Directed edges representing known resistance signaling relationships
     NETWORK_EDGES = [
-        ('RAS',   'BRAF'),
-        ('BRAF',  'MEK'),
-        ('MEK',   'ERK'),
-        ('ERK',   'mTOR'),
-        ('AKT',   'mTOR'),
-        ('ERK',   'EMT'),
-        ('PI3K',  'AKT'),
-        ('AKT',   'ERK'),   # feedback reactivation in resistance
-        ('mTOR',  'EMT'),
-        ('EMT',   'AKT'),   # EMT-driven PI3K feedback
+        ("RAS", "BRAF"), ("BRAF", "MEK"), ("MEK", "ERK"), ("ERK", "mTOR"),
+        ("AKT", "mTOR"), ("ERK", "EMT"), ("PI3K", "AKT"),
+        ("AKT", "ERK"),    # feedback reactivation in resistance
+        ("mTOR", "EMT"), ("EMT", "AKT"),
     ]
+
+    NODE_PATHWAY = {
+        "RAS": "MAPK/ERK", "BRAF": "MAPK/ERK", "MEK": "MAPK/ERK", "ERK": "MAPK/ERK",
+        "PI3K": "PI3K-AKT", "AKT": "PI3K-AKT", "mTOR": "mTOR", "EMT": "EMT",
+    }
+    PATHWAY_COLOR = {
+        "MAPK/ERK": cfg.COLOR_RESIST, "PI3K-AKT": cfg.COLOR_CONTROL,
+        "mTOR": cfg.COLOR_ACCENT, "EMT": "#E69F00",
+    }
 
     @staticmethod
     def build_network() -> nx.DiGraph:
-        """
-        Constructs the melanoma resistance signaling network as a directed graph.
-
-        Nodes represent signaling proteins and kinases.  Edges represent
-        known activating or inhibitory relationships curated from the
-        BRAFi/MEKi resistance literature.
-
-        Returns
-        -------
-        nx.DiGraph
-            Directed graph with all curated resistance signaling edges.
-        """
         G = nx.DiGraph()
         G.add_edges_from(NetworkBasedSystemsBiology.NETWORK_EDGES)
-
-        print(f"Nodes : {list(G.nodes)}")
-        print(f"Edges : {G.number_of_edges()}")
-
-        NetworkBasedSystemsBiology._plot_network(G)
-
+        for node in G.nodes:
+            G.nodes[node]["pathway"] = NetworkBasedSystemsBiology.NODE_PATHWAY.get(node, "other")
+        print(f"Nodes: {G.number_of_nodes()}  |  Edges: {G.number_of_edges()}")
+        NetworkBasedSystemsBiology._plot(G)
         return G
 
     @staticmethod
-    def _plot_network(G: nx.DiGraph) -> None:
-        """
-        Visualises the signaling network with a spring layout.
+    def _plot(G: nx.DiGraph) -> None:
+        cfg.apply_style()
+        pos = nx.spring_layout(G, seed=42, k=1.2)
+        centrality = nx.betweenness_centrality(G)
+        node_colors = [NetworkBasedSystemsBiology.PATHWAY_COLOR.get(
+            G.nodes[n]["pathway"], cfg.COLOR_NS) for n in G.nodes]
+        node_sizes = [2200 + 6000 * centrality[n] for n in G.nodes]
 
-        Parameters
-        ----------
-        G : nx.DiGraph
-            Directed melanoma resistance signaling graph.
-        """
-        pos = nx.spring_layout(G, seed=42)
-
-        fig, ax = plt.subplots(figsize=(8, 6))
-
-        nx.draw(
-            G,
-            pos,
-            with_labels=True,
-            node_size=3000,
-            node_color='steelblue',
-            font_color='white',
-            font_size=10,
-            font_weight='bold',
-            edge_color='dimgrey',
-            arrows=True,
-            arrowsize=20,
-            ax=ax,
-        )
-
-        ax.set_title('Melanoma Resistance Signaling Network', fontsize=13)
-        plt.tight_layout()
-        plt.show()
+        fig, ax = plt.subplots(figsize=(10, 8))
+        nx.draw_networkx_edges(G, pos, ax=ax, edge_color="#666666", arrows=True,
+                               arrowsize=22, width=1.6, connectionstyle="arc3,rad=0.08",
+                               node_size=node_sizes)
+        nx.draw_networkx_nodes(G, pos, ax=ax, node_color=node_colors,
+                               node_size=node_sizes, edgecolors="#222222", linewidths=1.2)
+        nx.draw_networkx_labels(G, pos, ax=ax, font_size=11, font_weight="bold",
+                                font_color="white")
+        handles = [Patch(facecolor=c, label=p)
+                   for p, c in NetworkBasedSystemsBiology.PATHWAY_COLOR.items()]
+        ax.legend(handles=handles, title="Pathway", loc="upper left", fontsize=9)
+        ax.set_title("BRAFi/MEKi Resistance Signalling Network in Melanoma")
+        ax.axis("off")
+        cfg.save_figure(fig, "12_resistance_signaling_network")
 
 
-# ----------------------------------------------------------------------
-# Entry point
-# ----------------------------------------------------------------------
 def main():
     NetworkBasedSystemsBiology.build_network()
 
