@@ -29,6 +29,7 @@ PIPELINE = [
     (2, "Cleaning & QC", "cleanDatas.py"),
     (2, "Quality control", "quality_control_visualization.py"),
     (3, "Temporal dynamics", "temporal_kinase_activation_dynamics.py"),
+    (3, "Kinase activation by condition", "codeFatima.py"),
     (4, "Differential phosphorylation", "differential_phosphorylation_analysis.py"),
     (4, "Group comparison", "phospho_group_comparison.py"),
     (5, "Volcano plot", "volcano_plot_visualization.py"),
@@ -41,6 +42,13 @@ PIPELINE = [
     (12, "Signalling network", "network_based_systems_biology.py"),
     (13, "Cytoscape export", "cytoscape_export.py"),
     (14, "Final export", "final_result_export.py"),
+    (15, "PXD013923 BRAFi/MEKi/ERKi (real)", "pxd013923_kinase_inhibition_analysis.py"),
+    (16, "PXD022992 DIA cell lines (real)",   "pxd022992_dia_phosphoproteome_analysis.py"),
+    (17, "KSEA OmniPath network",             "ksea_omnipath_analysis.py"),
+    (18, "TCGA-SKCM download",                "tcga_skcm_download.py"),
+    (19, "TCGA-SKCM analysis",                "tcga_skcm_analysis.py"),
+    (20, "Temporal BRAFi resistance (GEO)",   "temporal_braf_resistance_analysis.py"),
+    (21, "Neural network — phosphosite NN",   "nn_resistance_classifier.py"),
 ]
 
 
