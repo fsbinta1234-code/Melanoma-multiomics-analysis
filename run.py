@@ -12,8 +12,7 @@ Usage
     python run.py                 # run all phases in order
     python run.py 4 7 11          # run only the given phase numbers
 
-`codeFatima.py` is intentionally excluded (not part of the pipeline — see
-DOCUMENTATION.md §7).
+
 """
 import os
 import subprocess
@@ -29,7 +28,6 @@ PIPELINE = [
     (2, "Cleaning & QC", "cleanDatas.py"),
     (2, "Quality control", "quality_control_visualization.py"),
     (3, "Temporal dynamics", "temporal_kinase_activation_dynamics.py"),
-    (3, "Kinase activation by condition", "codeFatima.py"),
     (4, "Differential phosphorylation", "differential_phosphorylation_analysis.py"),
     (4, "Group comparison", "phospho_group_comparison.py"),
     (5, "Volcano plot", "volcano_plot_visualization.py"),
@@ -49,6 +47,8 @@ PIPELINE = [
     (19, "TCGA-SKCM analysis",                "tcga_skcm_analysis.py"),
     (20, "Temporal BRAFi resistance (GEO)",   "temporal_braf_resistance_analysis.py"),
     (21, "Neural network — phosphosite NN",   "nn_resistance_classifier.py"),
+    (22, "Signaling-kinetics phase figures",  "signaling_kinetics_figures.py"),
+    (23, "Generate phase documentation",      "generate_phase_docs.py"),
 ]
 
 

@@ -117,7 +117,10 @@ def build_dataset():
 
     print(f"[data] total={len(y)}  train={len(y_tr)}  test={len(y_te)}  "
           f"features={X.shape[1]}  positives={int(y.sum())}/{len(y)}")
-    return (X_tr, y_tr), (X_te, y_te), feat_cols, selected[valid]
+    # Return the TEST-set site IDs aligned to X_te order (idx_te is the shuffled,
+    # stratified test selection — slicing the array by position would misalign).
+    site_ids = selected[valid]
+    return (X_tr, y_tr), (X_te, y_te), feat_cols, site_ids[idx_te]
 
 
 def make_loaders(X_tr, y_tr, X_te, y_te):
@@ -359,7 +362,7 @@ def run():
             return
 
     # Data
-    (X_tr, y_tr), (X_te, y_te), feat_cols, site_ids = build_dataset()
+    (X_tr, y_tr), (X_te, y_te), feat_cols, test_site_ids = build_dataset()
     train_dl, test_dl = make_loaders(X_tr, y_tr, X_te, y_te)
 
     # Model
@@ -380,9 +383,7 @@ def run():
     # Save outputs
     cfg.save_table(history, "nn_training_history.csv")
 
-    # Save per-site predictions on test set
-    n_train = len(y_tr)
-    test_site_ids = site_ids[n_train:]  # rough alignment (last 30%)
+    # Save per-site predictions on the test set (site IDs aligned to X_te order)
     pred_df = pd.DataFrame({
         "site": test_site_ids[:len(probs_te)],
         "prob_differential": probs_te,

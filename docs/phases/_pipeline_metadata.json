@@ -1,0 +1,555 @@
+{
+ "readDataset.py": {
+  "phase": "foundation",
+  "title": "Multi-omics Dataset Loading (GEO expression, proteomics, phosphoproteomics)",
+  "objective": "Provides the central data-import layer for the melanoma BRAFi+MEKi study, loading the three raw omics datasets (GEO microarray expression, MaxQuant protein groups, and MaxQuant phospho STY sites) into pandas DataFrames ready for all downstream signaling and resistance analyses.",
+  "datasets": [
+   "GSE199405 (datas/GSE199405_series_matrix.txt) — Affymetrix Clariom D microarray, 3 melanoma cell lines x 2 ve…",
+   "datas/proteinGroups.csv — MaxQuant label-free (LFQ) proteomics output",
+   "datas/Phospho__STY_Sites.csv — MaxQuant Phospho (STY) Sites output"
+  ],
+  "figures": [],
+  "tables": [],
+  "highlights": [
+   "GEO expression matrix loaded: 135,750 probe rows x 12 sample columns (GSM5972234-GSM5972245), all float64, 0 missing values",
+   "Protein groups loaded: 6,587 protein groups x 418 columns (296 int64, 68 str, 54 float64), 84,932 total NaN values",
+   "Phospho (STY) sites loaded: 22,369 phosphosite entries x 651 columns (410 float64, 216 int64, 25 str), 9,065,696 total NaN values"
+  ],
+  "run": "python3 readDataset.py",
+  "notes": "Pure data-loading/QC module — it saves no figures or tables (no cfg.save_figure, plt.savefig, or to_csv calls); the __main__ block only prints shape/dtype/NaN summaries to the log. The proteinGroups and Phospho STY files are read as tab-separated (sep='\\\\t')…"
+ },
+ "temporal_kinase_activation_dynamics.py": {
+  "phase": "phase2",
+  "title": "Temporal Kinase Activation Dynamics (illustrative ERK/AKT/mTOR rewiring)",
+  "objective": "Illustrate the temporal signaling-rewiring pattern during acquisition of BRAFi/MEKi resistance: acute ERK/MAPK dynamics followed by late compensatory activation of AKT and mTOR across 6h/24h/48h/72h of treatment. It renders a single explanatory line plot of kinase activation scores over treatment time.",
+  "datasets": [
+   "None (no real dataset consumed) — kinase activation values are hard-coded illustrative constants in the scrip…"
+  ],
+  "figures": [
+   "03_temporal_kinase_activation.png"
+  ],
+  "tables": [],
+  "highlights": [
+   "Three kinase activation curves plotted over 4 treatment time points (6h, 24h, 48h, 72h)",
+   "ERK (log2) activation trajectory: 2.1 -> 1.4 -> 2.7 -> 4.2 (acute dip then late rise)",
+   "AKT (log2) activation trajectory: 1.0 -> 1.8 -> 3.0 -> 4.1 (progressive late increase)"
+  ],
+  "run": "python3 temporal_kinase_activation_dynamics.py",
+  "notes": "All numeric values are ILLUSTRATIVE/placeholder, not derived from data — the four-timepoint ERK/AKT/mTOR curves are hard-coded class constants (TIME_POINTS, CURVES). The script docstring and log explicitly label the figure as 'illustrative' and note the avail…"
+ },
+ "phospho_group_comparison.py": {
+  "phase": "phase3",
+  "title": "Phosphoproteomic Group Comparison: Resistant (ARoe) vs Control (LacZ)",
+  "objective": "Identifies phosphosites that are differentially regulated between AR-overexpressing (ARoe) BRAFi/MEKi-resistant melanoma cells and LacZ control cells, and highlights the top sites by absolute log2 fold change to characterize the phosphosignaling state of the established resistant phenotype.",
+  "datasets": [
+   "PXD026557 (MaxQuant Phospho (STY)Sites, phosphoproteomics)",
+   "GSE199405 / PRIDE PXD026557 study: AR determinant of melanoma BRAFi/MEKi resistance",
+   "Upstream: DifferentialPhosphorylationAnalysis.compute_results() (log2FC + t-test + BH-FDR per phosphosite)",
+   "Cleaned phospho matrix via CleanDatas.clean_phospho_sty_sites()"
+  ],
+  "figures": [
+   "04_phospho_group_comparison_top_sites.png"
+  ],
+  "tables": [],
+  "highlights": [
+   "714 significant phosphosites (FDR<0.05 and |log2FC|>1.0): 704 up-regulated in resistant (ARoe), only 10 down-regulated",
+   "Strongly asymmetric response — nearly all significant sites are hyperphosphorylated in the resistant state",
+   "Top site by |log2FC|: HNRNPU_S59, log2FC 3.21, AdjPValue 0.00167"
+  ],
+  "run": "python3 phospho_group_comparison.py",
+  "notes": "Several caveats worth flagging: (1) No CSV/table is written — the script only saves one figure and prints to the log, so the 714-site result table is not persisted. (2) The MaxQuant sample-number to condition mapping (MAXQUANT_SAMPLE in pipeline_config.py) is…"
+ },
+ "cleanDatas.py": {
+  "phase": "foundation",
+  "title": "Multi-Omics Data Cleaning and Quality Control",
+  "objective": "Loads and quality-controls the three raw omics datasets (microarray transcriptomics, MaxQuant proteomics, MaxQuant phosphoproteomics), removing contaminant/reverse hits and low-confidence phosphosites, then log2-normalising and imputing missing values to produce analysis-ready sample-per-column matrices for the downstream BRAFi+MEKi resistance analyses.",
+  "datasets": [
+   "GSE199405 (GEO microarray series matrix, transcriptomics, RMA log2)",
+   "MaxQuant proteinGroups (proteomics, LFQ intensity)",
+   "MaxQuant Phospho (STY) Sites (phosphoproteomics, intensity)"
+  ],
+  "figures": [],
+  "tables": [],
+  "highlights": [
+   "GEO transcriptomics cleaned to 135,750 probes x 12 samples",
+   "Proteins: 6,435 proteins x 48 samples (control=24, resistant=24)",
+   "Phosphosites: 15,124 sites x 48 samples (control=24, resistant=24)"
+  ],
+  "run": "python3 cleanDatas.py",
+  "notes": "This stage writes NO figures or tables; it only returns in-memory DataFrames and prints shape/QC counts to the log, so downstream stages must import CleanDatas as a library rather than reading saved CSVs. The script docstring labels itself 'Phase 2', but func…"
+ },
+ "quality_control_visualization.py": {
+  "phase": "foundation",
+  "title": "Quality Control - Per-sample Intensity Distribution Boxplots (3 omics layers)",
+  "objective": "Quality-control check of the three omics layers (phosphoproteomics, proteomics, transcriptomics) by plotting per-sample intensity distributions as boxplots coloured by group (LacZ control vs ARoe resistant), to confirm cross-sample normalisation and detect outlier or mislabelled samples before any downstream differential/integrative analysis.",
+  "datasets": [
+   "PRIDE PXD026557 (MaxQuant Phospho STY Sites + proteinGroups: phospho/proteomics)",
+   "GEO GSE199405 (Affymetrix Clariom D microarray, series matrix: transcriptomics)",
+   "Upstream cleaned matrices from cleanDatas.py: CleanDatas.clean_phospho_sty_sites / clean_protein_groups / cle…"
+  ],
+  "figures": [
+   "02_quality_control_boxplots.png"
+  ],
+  "tables": [],
+  "highlights": [
+   "Phosphoproteomics matrix QC'd: 15124 phosphosites x 48 samples (24 LacZ control, 24 ARoe resistant; 12 samples x 4 replicates A-D), after Localization prob >=…",
+   "Proteomics matrix QC'd: 6435 protein groups x 48 samples (24 control, 24 resistant), log2(LFQ+1) + imputation",
+   "Transcriptomics (GEO GSE199405) QC'd: 135750 probes x 12 samples (6 control, 6 resistant), RMA log2 values, 0 missing"
+  ],
+  "run": "python3 quality_control_visualization.py",
+  "notes": "Site/sample counts were NOT in the QC log itself (quality_control_visualization.log contains only the single saved-figure line: \"[figure] results/figures/02_quality_control_boxplots.png\"); the numbers were pulled from cleanDatas.log, which regenerates the ide…"
+ },
+ "volcano_plot_visualization.py": {
+  "phase": "phase3",
+  "title": "Volcano Plot of Differential Phosphorylation (ARoe Resistant vs LacZ Control)",
+  "objective": "Produces a publication-quality volcano plot of differential phosphorylation between AR-overexpressing (ARoe, BRAFi/MEKi-resistant) and LacZ-control melanoma cells, highlighting phosphosites significantly up- or down-regulated in the resistant state. It visualizes the phosphoproteomic signaling rewiring that accompanies established AR-driven drug resistance.",
+  "datasets": [
+   "PXD026557 (MaxQuant Phospho (STY)Sites, ARoe vs LacZ phosphoproteomics)",
+   "Upstream: DifferentialPhosphorylationAnalysis.compute_results() (Phase 4 log2FC / t-test / BH-FDR table)"
+  ],
+  "figures": [
+   "05_volcano_plot.png"
+  ],
+  "tables": [],
+  "highlights": [
+   "714 phosphosites significant out of 15,124 tested (from log)",
+   "Significance thresholds: FDR-adjusted p < 0.05 AND |log2FC| > 1.0",
+   "Comparison direction: ARoe (resistant) / LacZ (control); sites classified as Up (resistant), Down (resistant), or ns"
+  ],
+  "run": "python3 volcano_plot_visualization.py",
+  "notes": "Header labels this \"Phase 5\" but it is a re-plot of the Phase 4 differential analysis (reuses DifferentialPhosphorylationAnalysis.compute_results). Visualization inconsistency: the y-axis and the horizontal guideline use the raw p-value (-log10(PValue) and -l…"
+ },
+ "proteomics_analysis.py": {
+  "phase": "phase3",
+  "title": "Differential Proteomics: ARoe (resistant) vs LacZ (control) LFQ Analysis",
+  "objective": "Identify proteins whose abundance differs between AR-overexpressing (ARoe, BRAFi/MEKi-resistant) and LacZ (control/sensitive) melanoma cells, computing a per-protein log2 fold-change and t-test on LFQ intensities to nominate candidate adaptive regulators of drug resistance.",
+  "datasets": [
+   "MaxQuant proteinGroups LFQ (PRIDE PXD026557)",
+   "datas/proteinGroups.csv (upstream raw input)",
+   "cleanDatas.CleanDatas.clean_protein_groups (cleaned/imputed log2 LFQ matrix)"
+  ],
+  "figures": [
+   "07_proteomics_volcano.png",
+   "07_proteomics_fc_distribution.png"
+  ],
+  "tables": [],
+  "highlights": [
+   "6435 proteins analysed after contaminant/reverse filtering and log2 LFQ imputation",
+   "0 proteins significant at the applied thresholds (BH-adjusted p < 0.05 AND |log2FC| > 1.0)",
+   "Because n_sig = 0, no Top-10 |log2FC| table was printed and no protein labels appear on the volcano plot"
+  ],
+  "run": "python3 proteomics_analysis.py",
+  "notes": "No significant proteins were found (0/6435), so the volcano and distribution figures show only non-significant points; this likely reflects low statistical power from pooling all cell lines (A375/M14/WM9) and both treatments (Dabrafenib+DMSO) into 6-vs-6 grou…"
+ },
+ "multi_omics_integration.py": {
+  "phase": "phase3",
+  "title": "Multi-omics Integration: Phosphoproteome × Proteome (per gene)",
+  "objective": "Integrates phosphoproteomics and proteomics at the gene-symbol level to cross-reference signalling activity (phosphorylation) against protein abundance changes in BRAFi+MEKi resistance, testing whether phospho-site regulation is mirrored at the protein level. Transcriptomics is loaded as separate evidence but not merged (no gene↔probe mapping in that dataset).",
+  "datasets": [
+   "Upstream: DifferentialPhosphorylationAnalysis.compute_results() (phosphoproteomics, e.g. PXD013923)",
+   "Upstream: ProteomicsAnalysis.run_analysis() (proteomics, 6435 proteins)",
+   "Upstream: TranscriptomicsValidation.run_analysis() (GEO RNA-seq, e.g. GSE110054; LacZ control vs ARoe resista…",
+   "results/outputs/Integrated_Multiomics.csv (produced here)"
+  ],
+  "figures": [
+   "09_multiomics_phospho_vs_protein.png"
+  ],
+  "tables": [
+   "Integrated_Multiomics.csv"
+  ],
+  "highlights": [
+   "Integrated genes present in both phospho and protein layers (inner join): 3059",
+   "Phospho x protein log2FC correlation: r = 0.137 (weak positive concordance)",
+   "Proteomics: 6435 proteins analysed, 0 significant"
+  ],
+  "run": "python3 multi_omics_integration.py",
+  "notes": "Weak biological signal: phospho x protein correlation is only r = 0.137, proteomics reports 0 significant proteins, and transcriptomics reports just 1 significant probe out of 135750 — so the integration rests on very sparse significance. transcript_results i…"
+ },
+ "transcriptomics_validation.py": {
+  "phase": "phase3",
+  "title": "Phase 8 — Transcriptomics Validation of Resistance Signatures (GEO GSE199405)",
+  "objective": "Provides orthogonal, transcriptome-level evidence for the BRAFi/MEKi resistance signatures by contrasting ARoe (resistant) versus LacZ (control) microarray samples, computing per-probe log2 fold-change and differential-expression significance to confirm whether resistance-associated genes move consistently at the mRNA level.",
+  "datasets": [
+   "GEO GSE199405 (Affymetrix microarray, log2/RMA expression; cell lines A375, M14, WM9; ARoe vs LacZ; Dabrafeni…",
+   "datas/GSE199405_series_matrix.txt"
+  ],
+  "figures": [
+   "08_transcriptomics_volcano.png",
+   "08_transcriptomics_fc_distribution.png"
+  ],
+  "tables": [],
+  "highlights": [
+   "Grouping yielded 6 control (LacZ) vs 6 resistant (ARoe) samples",
+   "135,750 probes analysed across the microarray",
+   "Only 1 probe passed significance (FDR-BH adj p < 0.05 AND |log2FC| > 1.0) — essentially no differential expression detected"
+  ],
+  "run": "python3 transcriptomics_validation.py",
+  "notes": "Statistically the result is essentially null: only 1 of 135,750 probes is significant. The likely cause is the grouping in cfg.geo_groups(), which collapses ARoe-vs-LacZ across three different cell lines (A375, M14, WM9) AND both treatments (Dabrafenib + DMSO…"
+ },
+ "machine_learning_resistance_prediction.py": {
+  "phase": "phase3",
+  "title": "Machine Learning Resistance Prediction (Random Forest phosphosite classifier)",
+  "objective": "Trains a Random Forest to classify resistant (ARoe) versus control (LacZ) melanoma samples from their phosphoproteomic profiles, and ranks phosphosites by Gini importance to prioritise candidate biomarkers of BRAFi+MEKi resistance.",
+  "datasets": [
+   "datas/Phospho__STY_Sites.csv (MaxQuant Phospho (STY) Sites, filtered to localization prob >= 0.75, columns 1A…"
+  ],
+  "figures": [
+   "10_ml_confusion_matrix.png",
+   "10_ml_feature_importance.png"
+  ],
+  "tables": [],
+  "highlights": [
+   "Dataset: 48 samples (24 resistant/ARoe vs 24 control/LacZ) x 15,124 phosphosite features",
+   "5-fold stratified cross-validation accuracy: 0.836 +/- 0.104",
+   "Held-out test set (n=15) accuracy: 0.600; macro avg f1 = 0.58"
+  ],
+  "run": "python3 machine_learning_resistance_prediction.py",
+  "notes": "Small-sample caveat: only 48 samples with 15,124 features (p >> n), so overfitting risk is high; the gap between CV accuracy (0.836) and held-out test accuracy (0.600, n=15) reflects this instability. The script does not save the ranked feature-importance tab…"
+ },
+ "kinase_signaling_analysis.py": {
+  "phase": "phase2",
+  "title": "Signalling-Pathway Activity Inference (MAPK/ERK, PI3K-AKT, mTOR, EMT)",
+  "objective": "Infers the activity of four resistance-relevant signalling pathways (MAPK/ERK, PI3K-AKT, mTOR, EMT) in BRAFi/MEKi-resistant vs control cells by scoring each pathway as the mean log2FC of the phosphosites whose genes belong to that pathway, quantifying the signalling rewiring associated with acquired resistance (ARoe vs LacZ).",
+  "datasets": [
+   "PXD026557 (PRIDE phosphoproteomics, MaxQuant Phospho (STY) Sites)",
+   "GSE199405 (GEO series)",
+   "datas/Phospho__STY_Sites.csv",
+   "differential_phosphorylation_analysis.compute_results (upstream log2FC / t-test / FDR table)"
+  ],
+  "figures": [
+   "06_pathway_activity_scores.png"
+  ],
+  "tables": [
+   "Pathway_Activity_Scores.csv"
+  ],
+  "highlights": [
+   "All four pathways show positive activity (up-regulated in resistant ARoe vs LacZ) — no pathway is net-suppressed",
+   "MAPK/ERK: mean log2FC = 0.417 across 33 mapped phosphosites, 1 significant (FDR<0.05, |log2FC|>threshold)",
+   "PI3K-AKT: mean log2FC = 0.258 across 14 phosphosites, 2 significant"
+  ],
+  "run": "python3 kinase_signaling_analysis.py",
+  "notes": "Pathway \"activity\" is a simple unweighted mean of member-site log2FC values — not a validated KSEA or enrichment method — and no statistical test is applied to the pathway-level scores themselves (bars carry no p-value/CI). Very few sites reach per-site signi…"
+ },
+ "network_based_systems_biology.py": {
+  "phase": "phase2",
+  "title": "Phase 12 — Network-Based Systems Biology: BRAFi/MEKi Resistance Signalling Network",
+  "objective": "Reconstructs the BRAFi+MEKi resistance signalling network (MAPK/ERK, PI3K-AKT, mTOR, EMT) as a directed graph to visualize pathway crosstalk and feedback reactivation, with nodes coloured by pathway and sized by betweenness centrality to highlight signalling hubs.",
+  "datasets": [
+   "Hard-coded literature-curated signalling edges (no external dataset consumed; network topology defined inline…"
+  ],
+  "figures": [
+   "12_resistance_signaling_network.png"
+  ],
+  "tables": [],
+  "highlights": [
+   "Directed network built with 8 nodes and 10 edges (from log: 'Nodes: 8 | Edges: 10')",
+   "Nodes assigned to 4 pathway groups: MAPK/ERK (RAS, BRAF, MEK, ERK), PI3K-AKT (PI3K, AKT), mTOR, and EMT",
+   "Encodes resistance feedback reactivation loops, notably AKT->ERK (labelled 'feedback reactivation in resistance') plus EMT->AKT and mTOR->EMT crosstalk"
+  ],
+  "run": "python3 network_based_systems_biology.py",
+  "notes": "The network is fully hard-coded from prior literature (NETWORK_EDGES / NODE_PATHWAY defined inline), not derived from this project's omics data — it is a conceptual/illustrative topology rather than a data-driven reconstruction. No quantitative results, corre…"
+ },
+ "pxd013923_kinase_inhibition_analysis.py": {
+  "phase": "phase1",
+  "title": "PXD013923 Acute Kinase-Inhibition Phosphoproteomics (A375, 30 min BRAFi/MEKi/ERKi)",
+  "objective": "Quantify how acute (30-min) inhibition of the RAF-MEK-ERK module in A375 melanoma cells reshapes the phosphoproteome, testing that the three inhibitors (BRAFi/Dabrafenib, MEKi/Trametinib, ERKi/SCH772984) agree as a linear module and that canonical MAPK/ERK phosphosites are selectively suppressed.",
+  "datasets": [
+   "PXD013923 (PRIDE, RAF-MEK-ERK module phosphoproteomics, A375, SILAC/MaxQuant)",
+   "datas/PXD013923/PhosphoSTYSites.txt",
+   "datas/PXD013923/ensp_to_gene.csv (ENSP->gene map via mygene.info)"
+  ],
+  "figures": [
+   "pxd013923_response_distributions.png",
+   "pxd013923_inhibitor_agreement.png",
+   "pxd013923_mapk_anchor.png"
+  ],
+  "tables": [
+   "PXD013923_inhibitor_log2_matrix.csv",
+   "PXD013923_top_suppressed_sites.csv"
+  ],
+  "highlights": [
+   "10,273 phosphosites retained after filtering (localization prob >= 0.75, Reverse/contaminant removed, ENSP-mapped) and summarized as mean log2 H/L ratio per in…",
+   "81 MAPK/ERK anchor phosphosites identified; anchor median log2 = -0.295, confirming canonical pathway sites are suppressed (sign convention held without needin…",
+   "BRAFi: n=8756 sites, median log2 = -0.038, 346 strongly down (<-1) vs 84 up (>1)"
+  ],
+  "run": "python3 pxd013923_kinase_inhibition_analysis.py",
+  "notes": "The inhibitor-agreement Pearson r values (BRAFi/MEKi/ERKi pairwise correlations) are computed and drawn on the scatter figure but are NOT printed to the log, so no numeric correlation can be reported from the log. The script depends on datas/PXD013923/ensp_to…"
+ },
+ "pca_and_clustering_analysis.py": {
+  "phase": "phase3",
+  "title": "PCA & K-Means Clustering of Phosphoproteomic Samples",
+  "objective": "Unsupervised dimensionality reduction (PCA to 2 components) and K-Means clustering of the melanoma phosphoproteomic profiles to explore global sample heterogeneity and whether the samples separate along the AR-driven resistance axis (ARoe vs LacZ) and by cell line (A375/M14/WM9).",
+  "datasets": [
+   "PXD026557 (PRIDE MaxQuant Phospho (STY) Sites, phosphoproteomics)",
+   "datas/Phospho__STY_Sites.csv (raw MaxQuant phosphosite table, ~22,369 entries)"
+  ],
+  "figures": [
+   "11_pca_clustering.png"
+  ],
+  "tables": [],
+  "highlights": [
+   "PC1 explains 39.9% of the variance and PC2 explains 8.0% (together ~47.9% captured by the 2-component projection).",
+   "Analysis runs on the cleaned phosphosite matrix (48 columns: 24 ARoe + 24 LacZ = 12 samples x 4 replicates A-D), StandardScaler-standardized on the transposed…",
+   "K-Means with k=2 clusters (random_state=42, n_init=10) is fit to compare data-driven grouping against the ARoe/LacZ experimental labels."
+  ],
+  "run": "python3 pca_and_clustering_analysis.py",
+  "notes": "Log is very sparse: it reports only the explained-variance percentages (PC1=39.9%, PC2=8.0%) and the figure path. No cluster composition, silhouette score, or agreement metric (e.g. ARI) between K-Means clusters and the true ARoe/LacZ labels is computed or lo…"
+ },
+ "final_result_export.py": {
+  "phase": "phase3",
+  "title": "Phase 14 — Final Multi-Omics Result Export",
+  "objective": "Consolidates the melanoma BRAFi/MEKi-resistance analysis by re-running the differential phosphoproteomics, proteomics, transcriptomics, and multi-omics integration steps and exporting every result table, comparing AR-overexpressing resistant (ARoe) versus control (LacZ) cells across A375, M14, and WM9 lines.",
+  "datasets": [
+   "PRIDE PXD026557 (MaxQuant phospho + proteomics, samples 1A-12D)",
+   "GEO GSE199405 (transcriptomics series matrix, GSM5972234-GSM5972245)",
+   "Upstream module outputs: DifferentialPhosphorylationAnalysis.compute_results, ProteomicsAnalysis.run_analysis…"
+  ],
+  "figures": [
+   "07_proteomics_volcano.png",
+   "07_proteomics_fc_distribution.png",
+   "08_transcriptomics_volcano.png",
+   "08_transcriptomics_fc_distribution.png",
+   "09_multiomics_phospho_vs_protein.png"
+  ],
+  "tables": [
+   "Differential_Phosphorylation_all.csv",
+   "Differential_Phosphorylation_significant.csv",
+   "Proteomics_Results.csv",
+   "Transcriptomics_Results.csv",
+   "Integrated_Multiomics.csv"
+  ],
+  "highlights": [
+   "Differential phosphosites: 15,124 tested, 714 significant (Differential_Phosphorylation_all.csv 15124x6, significant subset 714x6)",
+   "Proteomics: 6,435 proteins analysed, 0 significant (ARoe vs LacZ)",
+   "Transcriptomics (GSE199405): 6 control (LacZ) vs 6 resistant (ARoe) samples; 135,750 probes analysed, only 1 significant"
+  ],
+  "run": "python3 final_result_export.py",
+  "notes": "This stage is really a cross-cutting export/orchestration step (re-runs all four analysis modules and writes tables), so it spans all phases; Phase 3 chosen because the distinctive deliverable is the multi-omics integration table. NOTE: the script itself only…"
+ },
+ "cytoscape_export.py": {
+  "phase": "phase2",
+  "title": "Phase 13 — Cytoscape GraphML Export of the Resistance Signalling Network",
+  "objective": "Serializes the reconstructed BRAFi/MEKi resistance signalling network (MAPK/ERK, PI3K-AKT, mTOR, EMT) to GraphML so it can be opened and further annotated in Cytoscape, preserving each node's pathway membership as a graph attribute.",
+  "datasets": [
+   "Hard-coded canonical resistance-network topology defined in network_based_systems_biology.py (NETWORK_EDGES /…",
+   "Upstream input: NetworkBasedSystemsBiology.build_network() (returns the nx.DiGraph)"
+  ],
+  "figures": [
+   "12_resistance_signaling_network.png"
+  ],
+  "tables": [
+   "Melanoma_Resistance_Network.graphml"
+  ],
+  "highlights": [
+   "Exported a directed signalling network of 8 nodes and 10 edges to results/outputs/Melanoma_Resistance_Network.graphml",
+   "Nodes span 4 pathways: MAPK/ERK (RAS, BRAF, MEK, ERK), PI3K-AKT (PI3K, AKT), mTOR, and EMT; each node carries a 'pathway' attribute in the GraphML",
+   "Topology encodes the canonical cascade RAS→BRAF→MEK→ERK plus PI3K→AKT→mTOR, with an AKT→ERK feedback-reactivation edge and mTOR→EMT / ERK→EMT / EMT→AKT loops r…"
+  ],
+  "run": "python3 cytoscape_export.py",
+  "notes": "The network is a small, manually curated/literature-based topology hard-coded in network_based_systems_biology.py (8 nodes, 10 edges) — it is NOT inferred from the experimental omics data, so edges, the AKT→ERK feedback loop, and betweenness-based node sizes…"
+ },
+ "ksea_omnipath_analysis.py": {
+  "phase": "phase1",
+  "title": "KSEA Kinase Activity Inference from the OmniPath Kinase-Substrate Network",
+  "objective": "Infers kinase activity scores from phosphoproteomics by aggregating measured substrate phosphosites over the OmniPath kinase-substrate network (KSEA z-scores). It quantifies which kinases are acutely suppressed or activated after BRAF/MEK/ERK inhibition (PXD013923, A375, 30 min) and contrasts baseline kinase activity across six melanoma cell lines (PXD022992), highlighting MAPK-pathway shutdown as the direct drug effect.",
+  "datasets": [
+   "PXD013923",
+   "PXD022992",
+   "OmniPath enzyme-substrate network (enzsub_phospho_genesymbols.tsv)",
+   "results/outputs/PXD013923_inhibitor_log2_matrix.csv"
+  ],
+  "figures": [
+   "ksea_pxd013923_inhibitors.png",
+   "ksea_pxd022992_cell_lines.png",
+   "ksea_combined_volcano.png"
+  ],
+  "tables": [
+   "KSEA_PXD013923_kinase_zscores.csv",
+   "KSEA_PXD022992_kinase_zscores.csv"
+  ],
+  "highlights": [
+   "OmniPath network loaded: 39,037 enzyme-substrate records covering 1,648 kinases; only kinases with >=5 measured substrates are scored.",
+   "BRAFi acutely suppresses the MAPK cascade in A375 (30 min): BRAF z=-6.64 (n=10, p=0.000), RAF1 z=-6.51 (n=12, p=0.000), MAP2K1 z=-6.47 (n=11, p=0.000), MAPK1 z…",
+   "PRKCB is also significantly suppressed (z=-3.58, n=34, p=0.001) while PRKCD is the only focal kinase significantly activated under BRAFi (z=+2.63, n=28, p=0.01…"
+  ],
+  "run": "python3 ksea_omnipath_analysis.py",
+  "notes": "Runs cleanly on real data with no missing-file or placeholder issues; results are reproducible (SEED=42, N_PERMS=1000). Minor caveats: KSEA z-scores for the top MAPK kinases rest on small substrate sets that just clear the MIN_SUBSTRATES=5 floor (BRAF n=10, R…"
+ },
+ "tcga_skcm_download.py": {
+  "phase": "phase3",
+  "title": "TCGA-SKCM Data Download from NCI GDC API",
+  "objective": "Fetches open-access TCGA-SKCM (cutaneous melanoma) clinical outcomes, driver-gene somatic mutations, and RNA-seq file manifests from the NCI GDC public API to provide an independent clinical/genomic reference cohort for the melanoma BRAFi+MEKi resistance study. Outputs are written to datas/TCGA-SKCM/ (clinical.csv, driver_mutations.csv, rnaseq_manifest.csv, rnaseq_subset/).",
+  "datasets": [
+   "TCGA-SKCM (NCI GDC public API, project.project_id = TCGA-SKCM)",
+   "GDC /cases endpoint — clinical (vital_status, days_to_death, follow-up, AJCC stage, prior_treatment)",
+   "GDC /ssm_occurrences endpoint — somatic mutations for driver genes BRAF/NRAS/NF1/PTEN/CDKN2A/KIT/MAP2K1/RAC1/…",
+   "GDC /files endpoint — RNA-seq Gene Expression Quantification, STAR - Counts workflow, open access"
+  ],
+  "figures": [],
+  "tables": [],
+  "highlights": [
+   "No results are hard-coded: all outputs are fetched live from the GDC API at runtime, so counts depend on the API response (clinical query capped at size 500; p…",
+   "Queries somatic mutations for 11 driver genes (BRAF, NRAS, NF1, PTEN, CDKN2A, KIT, MAP2K1, RAC1, PPP6C, PREX2, IDH1), filtered to HIGH/MODERATE VEP impact via…",
+   "Selects a representative RNA-seq subset of up to 40 samples (n_per_subtype=10 across 4 subtypes: BRAF_V600E, NRAS_mut, NF1_mut, Triple_WT) and downloads the ST…"
+  ],
+  "run": "python3 tcga_skcm_download.py",
+  "notes": "Network-dependent: requires internet access and the `curl` binary to reach https://api.gdc.cancer.gov; produces no output offline. Docstring inconsistency: the module docstring states '50 representative samples' but the code selects up to 40 (n_per_subtype=10…"
+ },
+ "differential_phosphorylation_analysis.py": {
+  "phase": "phase3",
+  "title": "Differential Phosphorylation Analysis (ARoe resistant vs LacZ control)",
+  "objective": "Identify phosphosites differentially regulated between BRAFi/MEKi-resistant (ARoe) and control (LacZ) melanoma cells by computing per-site log2 fold change and a two-sample t-test with Benjamini-Hochberg FDR correction, exposing the phospho-signaling landscape that distinguishes the resistant state.",
+  "datasets": [
+   "MaxQuant Phospho (STY)Sites matrix (datas/Phospho__STY_Sites.csv)",
+   "Cleaned via CleanDatas.clean_phospho_sty_sites: Reverse/contaminant filtered, Localization prob >= 0.75, log2…",
+   "Groups (pipeline_config.maxquant_groups): 6 ARoe/resistant vs 6 LacZ/control samples (tokens 1A..12D)"
+  ],
+  "figures": [
+   "04_differential_phosphorylation_volcano.png",
+   "04_differential_phosphorylation_heatmap.png"
+  ],
+  "tables": [],
+  "highlights": [
+   "15,124 phosphosites tested across 6 resistant (ARoe) vs 6 control (LacZ) samples",
+   "714 sites significant at FDR<0.05 and |log2FC|>1.0",
+   "Strongly asymmetric response: 704 up in resistant vs only 10 down in control"
+  ],
+  "run": "python3 differential_phosphorylation_analysis.py",
+  "notes": "No table is exported — the script only calls cfg.save_figure for the two PNGs; the full results DataFrame (Log2FC/PValue/AdjPValue/Significant) is computed and printed but never written to results/outputs, so downstream stages cannot reuse it. Statistics rely…"
+ },
+ "pxd022992_dia_phosphoproteome_analysis.py": {
+  "phase": "phase3",
+  "title": "PXD022992 directDIA Phosphoproteome — Kinase Signaling Across 6 Melanoma Cell Lines (BRAF…",
+  "objective": "Compare the directDIA phosphoproteome of six melanoma cell lines differing in driver mutation (four BRAF V600E, BRAFi-sensitive, vs two NRAS-mutant, intrinsically BRAFi-resistant) to identify kinase-pathway signaling differences that distinguish the two resistance-associated genotype states, via differential phosphorylation, PCA, and KSEA-style kinase activity scoring.",
+  "datasets": [
+   "PXD022992 (PRIDE) — directDIA phosphoproteome, Spectronaut report, 6 melanoma cell lines x 2 replicates, 55,9…",
+   "datas/PXD022992/20201020_083553_SPnew_Melanoma_directDIA_phosLocalized000_20201020_Report.xls"
+  ],
+  "figures": [
+   "pxd022992_qc.png",
+   "pxd022992_heatmap_top_variance.png",
+   "pxd022992_pca_cell_lines.png",
+   "pxd022992_volcano_braf_vs_nras.png",
+   "pxd022992_ksea_kinase_activity.png"
+  ],
+  "tables": [
+   "PXD022992_differential_phospho_BRAFvsNRAS.csv",
+   "PXD022992_ksea_kinase_scores.csv",
+   "PXD022992_phosphosite_matrix.csv",
+   "PXD022992_top100_variable_sites.csv"
+  ],
+  "highlights": [
+   "Loaded 55,943 phosphopeptide precursors; 55,939 sites retained after dropping sites missing in all cell lines (only 4 dropped), then Perseus-style imputed (mea…",
+   "6 cell lines x 2 replicates detected (A375, SH-4, SK-MEL-28, RPMI-7951 = BRAF V600E; G361, SK-MEL-31 = NRAS mutant); replicate-averaged log2 medians tightly cl…",
+   "Differential phosphorylation BRAF V600E vs NRAS (Welch t-test, thresholds p<0.05 and |log2FC|>1) across 55,897 tested sites: 1,387 sites higher in BRAF V600E,…"
+  ],
+  "run": "python3 pxd022992_dia_phosphoproteome_analysis.py",
+  "notes": "Not a drug time-course: these are untreated baseline cell lines compared by driver genotype (NRAS-mutant lines model intrinsic/consolidated BRAFi resistance), so it also borrows Phase 1 techniques (KSEA/ERK) despite fitting the consolidated-resistance compari…"
+ },
+ "tcga_skcm_analysis.py": {
+  "phase": "phase3",
+  "title": "TCGA-SKCM Clinical Genomics: Molecular Subtypes, Survival, and Phospho-Genomic Integration",
+  "objective": "Characterizes the TCGA-SKCM melanoma cohort by MAPK-driver molecular subtype (BRAF V600E / NRAS / NF1 / Triple-WT), profiles mutation frequency, survival, and MAPK/PI3K pathway expression, and cross-references BRAFi+MEKi-relevant BRAF-vs-NRAS differential phosphosites (PXD022992) against subtype-specific genomics to place cell-line resistance signatures in a clinical patient context.",
+  "datasets": [
+   "TCGA-SKCM (clinical.csv, driver_mutations.csv, rnaseq_subset_manifest.csv, rnaseq_subset/*.tsv STAR-Counts)",
+   "PXD022992 (phosphoproteomics BRAF V600E vs NRAS differential)",
+   "results/outputs/PXD022992_differential_phospho_BRAFvsNRAS.csv"
+  ],
+  "figures": [
+   "tcga_skcm_mutation_landscape.png",
+   "tcga_skcm_survival_km.png",
+   "tcga_skcm_phospho_integration.png",
+   "tcga_skcm_pathway_expression.png"
+  ],
+  "tables": [
+   "TCGA_SKCM_mutation_frequency.csv",
+   "TCGA_SKCM_clinical_with_subtypes.csv",
+   "TCGA_SKCM_phospho_integration_genes.csv"
+  ],
+  "highlights": [
+   "Cohort of 470 TCGA-SKCM patients classified into 4 MAPK-driver subtypes by priority (BRAF > NRAS > NF1 > WT): Triple_WT = 261 (55.5%), NRAS_mut = 125 (26.6%),…",
+   "Raw driver-mutation set sizes before overlap resolution: BRAF V600E = 37, NRAS = 127, NF1 = 63 patients",
+   "Mutation frequency summary exported for the top driver genes (TCGA_SKCM_mutation_frequency.csv, 11 genes x 3 columns)"
+  ],
+  "run": "python3 tcga_skcm_analysis.py",
+  "notes": "BRAF V600E is only 37/470 (7.9%) and Triple-WT is 55.5%, which is atypical for TCGA-SKCM (published cohort is ~50% BRAF, ~9% triple-WT); this strongly suggests driver_mutations.csv is an incomplete/subset table and subtype proportions should not be read as po…"
+ },
+ "nn_resistance_classifier.py": {
+  "phase": "phase3",
+  "title": "Neural-network phosphosite classifier: BRAF V600E vs NRAS differential phosphorylation",
+  "objective": "Trains a PyTorch MLP to predict whether a phosphosite is differentially phosphorylated between BRAF V600E and NRAS-mutant melanoma cell lines, using the 6 cell-line DIA intensity vector per site as features. This provides an ML model of the kinase-signaling differences that distinguish the two driver-mutation backgrounds.",
+  "datasets": [
+   "PXD022992 directDIA phosphoproteome (6 melanoma cell lines: A375, SH4, SK-MEL-28, RPMI-7951 = BRAF V600E; G36…",
+   "results/outputs/PXD022992_phosphosite_matrix.csv",
+   "results/outputs/PXD022992_differential_phospho_BRAFvsNRAS.csv"
+  ],
+  "figures": [
+   "nn_training_curves.png",
+   "nn_roc_confusion.png"
+  ],
+  "tables": [
+   "nn_training_history.csv",
+   "nn_predictions_test.csv"
+  ],
+  "highlights": [
+   "Balanced dataset of 5,382 phosphosites: 2,691 positives (differential, t-test pval<0.05 AND |log2FC_BRAFvsNRAS|>1) plus 2,691 sampled negatives; 6 features (pe…",
+   "Stratified 70/30 split; test set = 1,615 sites (807 positive / 808 negative)",
+   "Best test ROC-AUC = 0.9914 (epoch 118); final-epoch test AUC = 0.9891; final train AUC = 0.9958 (from nn_training_history.csv, 120 epochs)"
+  ],
+  "run": "python3 nn_resistance_classifier.py",
+  "notes": "Bug: in run(), the per-site test predictions use test_site_ids = site_ids[n_train:] (last 30% of the pre-split array), but the actual train/test split is a shuffled, stratified train_test_split — so the 'site' column in nn_predictions_test.csv is misaligned w…"
+ },
+ "temporal_braf_resistance_analysis.py": {
+  "phase": "phase3",
+  "title": "Temporal transcriptomics of BRAFi resistance development (GSE110054, M229 + M397)",
+  "objective": "Trace the adaptive transcriptional reprogramming that drives acquired BRAF-inhibitor (Vemurafenib) resistance across a days-to-months time course in two BRAF V600E melanoma lines (M229, M397), and integrate it with acute (30-min) KSEA kinase suppression to identify \"escape\" kinases that are suppressed early but transcriptionally rebound at resistance.",
+  "datasets": [
+   "GSE110054 (Hugo et al. 2018, FPKM time course; datas/GEO_temporal/GSE110054_FPKM.txt.gz)",
+   "PXD013923 KSEA kinase z-scores (results/outputs/KSEA_PXD013923_kinase_zscores.csv)",
+   "pipeline_config module (styling, save helpers, color constants)"
+  ],
+  "figures": [
+   "temporal_gse110054_qc.png",
+   "temporal_pca_resistance_trajectory.png",
+   "temporal_pathway_heatmap.png",
+   "temporal_key_gene_trajectories.png",
+   "temporal_resistance_signature_heatmap.png",
+   "temporal_kinase_escape_integration.png"
+  ],
+  "tables": [
+   "GEO_GSE110054_resistance_UP_genes.csv",
+   "GEO_GSE110054_resistance_DOWN_genes.csv",
+   "GEO_GSE110054_kinase_suppression_vs_rna_rebound.csv"
+  ],
+  "highlights": [
+   "Input verified: GSE110054_FPKM.txt.gz holds ~25,222 genes x 10 samples (M229: DMSO/3d/21d/2mo/90d; M397: DMSO/3d/11d/21d/73d), transformed to log2(FPKM+1); gen…",
+   "PCA builds a resistance trajectory (StandardScaler + PCA, 2 components, random_state=42) with arrows connecting successive time points per cell line; explained…",
+   "Resistance signatures defined by Spearman correlation of expression vs days, keeping genes concordant in BOTH cell lines at |r|>0.7 (UP if r>0.7, DOWN if r<-0.…"
+  ],
+  "run": "python3 temporal_braf_resistance_analysis.py",
+  "notes": "No execution log exists, so no numeric outcomes (site/gene counts, explained variance, correlations) can be reported — the script prints them at runtime only; all figures above are named .png via cfg.save_figure. Code discrepancy: find_resistance_signatures c…"
+ },
+ "signaling_kinetics_figures.py": {
+  "phase": "phase2",
+  "title": "Signaling-Transition-Kinetics Phase Figures (diagram-matching)",
+  "objective": "Generates the figures that directly mirror the signaling-transition-kinetics model (docs/phase2): the Phase-1 'KSEA scores drop' bar chart (MAPK core under BRAFi, PXD013923) and the Phase-2/3 pathway-activity trajectories over the BRAFi time course (GSE110054) — MAPK output drops then rebounds while PI3K/AKT/mTOR, RTK (AXL/PDGFR) and EMT rise (Δlog2 vs DMSO).",
+  "datasets": [
+   "results/outputs/KSEA_PXD013923_kinase_zscores.csv",
+   "datas/GEO_temporal/GSE110054_FPKM.txt.gz"
+  ],
+  "figures": [
+   "phase1_ksea_dropping_bars.png",
+   "signaling_kinetics_pathway_trajectories.png"
+  ],
+  "tables": [
+   "signaling_kinetics_trajectory_scores.csv"
+  ],
+  "highlights": [
+   "Phase 1: MAPK-core KSEA z-scores under BRAFi all strongly negative (BRAF/RAF1/MAP2K1/MAPK1/3) — quantitative 'MAPK shutdown'.",
+   "RTK score rises above DMSO baseline over the course (M397 up to +2.65 Δlog2), matching 'RTK expression (AXL, PDGFR) rising'.",
+   "MAPK output drops sharply at the first treated point then rebounds — transcriptional readout of the model's phosphoproteomic rebound."
+  ],
+  "run": "python3 signaling_kinetics_figures.py",
+  "notes": "Trajectory scores are computed as mean Δlog2 vs each cell line's DMSO baseline over the GSE110054 time points; a direct phospho time course is not available, so the transcriptional MAPK-output rebound serves as the proxy for the model's phosphoproteomic rebound."
+ }
+}

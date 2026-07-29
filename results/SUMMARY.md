@@ -1,12 +1,18 @@
-# Pipeline results — full run
+# Pipeline results — core run (stages 1–14)
 
-All scripts (except `codeFatima.py`) were **fixed** and executed individually.
-**Score: 16/16 OK.** Figures are in [figures/](figures/), tables in
-[outputs/](outputs/) and logs in [logs/](logs/).
+This file summarizes the **core resistant-vs-control run** (pipeline stages
+1–14, the AR-overexpression dataset). The later real-data stages (15–21:
+PXD013923, PXD022992, KSEA, TCGA-SKCM, GSE110054, neural network) are documented
+per phase in [`../docs/phases/`](../docs/phases/README.md), which is the
+authoritative, phase-organized documentation for the whole project.
+
+Figures are in [figures/](figures/), tables in [outputs/](outputs/) and logs in
+[logs/](logs/).
 
 - **Environment:** conda `Melanoma`, Python 3.11.15, `scikit-learn 1.9.0`, `networkx 3.6.1`
 - **Compared groups:** **ARoe (resistant)** vs **LacZ (control)** — AR
-  overexpression confers BRAFi/MEKi resistance (see DOCUMENTATION.md §1).
+  overexpression confers BRAFi/MEKi resistance (see
+  [`../docs/phases/README.md`](../docs/phases/README.md)).
 
 ## What was fixed
 
